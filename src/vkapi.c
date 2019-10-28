@@ -1,25 +1,16 @@
-#include <assert.h>
-#include <string.h>
-#include <cJSON.h>
-
-#include "va_utils.h"
-#include "vkapi.h"
-#include "dynamic_strings.h"
-
-#include "curl_wrap.h"
-
-#include <stdio.h>
-
-#include "vkapi_json_wrap.h"
+#include "common.h"
 
 #define VK_URL_METHOD "https://api.vk.com/method/"
 
-string_t vkapi_call_method(vkapi_handle *object, const char *method, string_t specific_args, vkapi_boolean result_need)
+static string_t _vkapi_call_method(vkapi_handle *object, const char *method, string_t specific_args, bool result_need)
 {
   string_t s = NULL;
   string_t s2 = NULL;
 
-  vkapi_boolean error_code = false;
+  if(!object)
+      object = worker_get_vkapi_handle();
+
+  bool error_code = false;
 
   s2 = string_init();
 
@@ -40,7 +31,7 @@ string_t vkapi_call_method(vkapi_handle *object, const char *method, string_t sp
 
   if(error_code != true)
     {
-      printf("vk_api: libcurl error!\n");
+      Con_Printf("vk_api: libcurl error!\n");
       string_destroy(s);
       return NULL;
     }
@@ -48,16 +39,53 @@ string_t vkapi_call_method(vkapi_handle *object, const char *method, string_t sp
   return s;
 }
 
-vkapi_attach *vkapi_upload_doc_by_url(vkapi_handle *object, vkapi_message_object *message, const char *filename, string_t data, docs_type_t type)
+string_t vkapi_call_method(const char *method, string_t specific_args, bool result_need)
+{
+  string_t s = NULL;
+  string_t s2 = NULL;
+  vkapi_handle *object = worker_get_vkapi_handle();
+
+  bool error_code = false;
+
+  s2 = string_init();
+
+  if(specific_args)
+  string_format( s2, "group_id=%i&access_token=%s&%s&v=5.101", object->group_id, object->vk_token, specific_args->ptr);
+  else
+  string_format( s2, "group_id=%i&access_token=%s&v=5.101", object->group_id, object->vk_token);
+
+  if(result_need)
+    {
+      s = string_init();
+      error_code = curl_post(object->curl_handle, va("%s/%s", VK_URL_METHOD, method), s2, NULL, s);
+    } else {
+      error_code = curl_post(object->curl_handle, va("%s/%s", VK_URL_METHOD, method), s2, NULL, NULL);
+    }
+
+  string_destroy( s2 );
+
+  if(error_code != true)
+    {
+      Con_Printf("vk_api: libcurl error!\n");
+      string_destroy(s);
+      return NULL;
+    }
+
+  return s;
+}
+
+vkapi_attach *vkapi_upload_doc_by_url(vkapi_message_object *message, const char *filename, string_t data, docs_type_t type)
 {
   string_t s = string_init();
+
+  vkapi_handle *object = worker_get_vkapi_handle();
 
   switch (type) {
 
       case VKAPI_DOC:
 	{
 	  string_format(s, "type=doc&peer_id=%i", message->peer_id);
-	  string_t result = vkapi_call_method(object, "docs.getMessagesUploadServer", s, true );
+      string_t result = vkapi_call_method("docs.getMessagesUploadServer", s, true );
 
 	  if(!result)
 	    break;
@@ -71,13 +99,11 @@ vkapi_attach *vkapi_upload_doc_by_url(vkapi_handle *object, vkapi_message_object
 
 	  if(!upload_url)
 	    {
-	    printf("upload url is null\n");
+	    Con_Printf("upload url is null\n");
 	    break;
 	    }
 
 	  string_t dataptr = string_init();
-
-	  printf("UPLOAD TO URL %s\n", cJSON_GetStringValue(upload_url));
 
       curl_uploadfile(object->curl_handle, cJSON_GetStringValue(upload_url), "file", filename, data, NULL, dataptr);
 
@@ -93,9 +119,9 @@ vkapi_attach *vkapi_upload_doc_by_url(vkapi_handle *object, vkapi_message_object
 
       cJSON_Delete(ptr);
 
-	  result = vkapi_call_method(object, "docs.save", s, true );
+      result = vkapi_call_method("docs.save", s, true );
 
-      printf("HMMMM: %s\n", result->ptr);
+      //Con_Printf("HMMMM: %s\n", result->ptr);
 
       ptr = cJSON_ParseWithOpts(result->ptr, NULL, false);
 
@@ -120,7 +146,7 @@ vkapi_attach *vkapi_upload_doc_by_url(vkapi_handle *object, vkapi_message_object
 	}
       case VKAPI_PHOTO:
     {	  string_format(s, "peer_id=%i", message->peer_id);
-      string_t result = vkapi_call_method(object, "photos.getMessagesUploadServer", s, true );
+      string_t result = vkapi_call_method("photos.getMessagesUploadServer", s, true );
 
       if(!result)
         break;
@@ -134,13 +160,11 @@ vkapi_attach *vkapi_upload_doc_by_url(vkapi_handle *object, vkapi_message_object
 
       if(!upload_url)
         {
-        printf("upload url is null\n");
+        Con_Printf("upload url is null\n");
         break;
         }
 
       string_t dataptr = string_init();
-
-      printf("UPLOAD TO URL %s\n", cJSON_GetStringValue(upload_url));
 
       curl_uploadfile(object->curl_handle, cJSON_GetStringValue(upload_url), "photo", filename, data, NULL, dataptr);
 
@@ -156,9 +180,9 @@ vkapi_attach *vkapi_upload_doc_by_url(vkapi_handle *object, vkapi_message_object
 
       cJSON_Delete(ptr);
 
-      result = vkapi_call_method(object, "photos.saveMessagesPhoto", s, true );
+      result = vkapi_call_method("photos.saveMessagesPhoto", s, true );
 
-      printf("HMMMM: %s\n", result->ptr);
+      //Con_Printf("HMMMM: %s\n", result->ptr);
 
       ptr = cJSON_ParseWithOpts(result->ptr, NULL, false);
 
@@ -195,13 +219,13 @@ string_t vkapi_get_longpoll_data(vkapi_handle *object)
 
   string_format( s2, "act=a_check&key=%s&wait=25&mode=2&ts=%lli", object->longpoll_key, object->longpoll_timestamp );
 
-  vkapi_boolean error_code = curl_post(object->curl_handle, object->longpoll_server_url, s2, NULL, s);
+  bool error_code = curl_post(object->curl_handle, object->longpoll_server_url, s2, NULL, s);
 
   string_destroy( s2 );
 
   if(error_code != true)
     {
-      printf("vk_api: libcurl error!\n");
+      Con_Printf("vk_api: libcurl error!\n");
       string_destroy( s );
       return NULL;
     }
@@ -210,7 +234,7 @@ string_t vkapi_get_longpoll_data(vkapi_handle *object)
 
   if( !json )
     {
-      printf( "Error while getting long poll data: json parser return NULL\n");
+      Con_Printf( "Error while getting long poll data: json parser return NULL\n");
       cJSON_Delete( json );
       string_destroy( s );
       return NULL;
@@ -222,7 +246,7 @@ string_t vkapi_get_longpoll_data(vkapi_handle *object)
     object->longpoll_timestamp = atoll(cJSON_GetStringValue(ts));
   else
     {
-      printf("Error while getting long poll data: json ts == NULL\n");
+      Con_Printf("Error while getting long poll data: json ts == NULL\n");
       cJSON_Delete(json);
       string_destroy( s );
       return NULL;
@@ -233,7 +257,7 @@ string_t vkapi_get_longpoll_data(vkapi_handle *object)
   return s;
 }
 
-const char *vkapi_attach_type(docs_type_t doc)
+static inline const char *vkapi_attach_type(docs_type_t doc)
 {
     switch (doc) {
     case VKAPI_PHOTO:
@@ -265,13 +289,15 @@ const char *vkapi_attach_type(docs_type_t doc)
     }
 }
 
-void vkapi_send_message(vkapi_handle *object, int peer_id, const char *msg, vkapi_attach *attachments, int attachmens_len)
+void vkapi_send_message(int peer_id, const char *msg, vkapi_attach *attachments, int attachmens_len)
 {
   string_t s = string_init();
 
-  if(!attachments)
-      string_format(s, "message=%s&random_id=0&peer_id=%i", msg, peer_id);
-  else {
+  if(!attachments) {
+      char *message_encoded = curl_urlencode(msg);
+      string_format(s, "message=%s&random_id=0&peer_id=%i", message_encoded, peer_id);
+      curl_ptr_free(message_encoded);
+  } else {
       string_t formated_attachmens = string_init();
       string_t tmp = string_init();
       for(int i = 0; attachmens_len > i; i++)
@@ -292,17 +318,17 @@ void vkapi_send_message(vkapi_handle *object, int peer_id, const char *msg, vkap
       string_destroy(tmp);
   }
 
-  vkapi_call_method(object, "messages.send", s, false);
+  vkapi_call_method("messages.send", s, false);
   string_destroy(s);
 }
 
-vkapi_boolean vkapi_get_long_poll_server(vkapi_handle *object)
+bool vkapi_get_long_poll_server(vkapi_handle *object)
 {
-  string_t method_result = vkapi_call_method(object, "groups.getLongPollServer", NULL, true);
+  string_t method_result = vkapi_call_method("groups.getLongPollServer", NULL, true);
 
   if(!method_result)
     {
-      printf("Error while getting long poll data: vk_api_call_method return NULL\n");
+      Con_Printf("Error while getting long poll data: vk_api_call_method return NULL\n");
       return false;
     }
 
@@ -312,8 +338,8 @@ vkapi_boolean vkapi_get_long_poll_server(vkapi_handle *object)
 
   if(!json)
     {
-      printf("Error while getting long poll data: json parser return NULL\n");
-      printf("Error before: %s\n", json_return);
+      Con_Printf("Error while getting long poll data: json parser return NULL\n");
+      Con_Printf("Error before: %s\n", json_return);
       cJSON_Delete(json);
       string_destroy(method_result);
       return false;
@@ -333,7 +359,7 @@ vkapi_boolean vkapi_get_long_poll_server(vkapi_handle *object)
   strncpy(object->longpoll_server_url, cJSON_GetStringValue(server), sizeof(object->longpoll_server_url));
   object->longpoll_timestamp = atoll(cJSON_GetStringValue(timestamp));
     } else {
-      printf("Error while getting long poll data: json parser return null json objects. Seems its error %s\n", method_result->ptr);
+      Con_Printf("Error while getting long poll data: json parser return null json objects. Seems its error %s\n", method_result->ptr);
       cJSON_Delete(json);
       string_destroy(method_result);
       return false;
@@ -347,21 +373,16 @@ vkapi_boolean vkapi_get_long_poll_server(vkapi_handle *object)
 static int vkapi_get_group_id(vkapi_handle *object)
 {
   int value = 0;
-  string_t s2 = string_init();
-  string_t data = string_init();
+  string_t result = string_init();
 
-  string_format(s2, "access_token=%s&v=5.101", object->vk_token);
-
-  vkapi_boolean result = curl_post(object->curl_handle, VK_URL_METHOD"/groups.getById", s2, NULL, data);
-
-  string_destroy(s2);
+  result = _vkapi_call_method(object, "groups.getById", NULL, true );
 
   if(result)
     {
-      value = vkapi_json_parse_groups_getById(data);
+      value = vkapi_json_parse_groups_getById(result);
     }
 
-  string_destroy(data);
+  string_destroy(result);
 
   return value;
 }
@@ -381,7 +402,7 @@ vkapi_handle *vkapi_init(const char *token)
   if(result->group_id == 0)
     {
       result = NULL;
-      printf("vkapi error: failed to get group id!\n");
+      Con_Printf("vkapi error: failed to get group id!\n");
     }
 
   return result;

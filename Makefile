@@ -28,7 +28,7 @@ CC=clang
 CXX=clang++
 endif
 
-OPT_CFLAGS = -O2 -flto -funroll-loops -fno-omit-frame-pointer -fno-stack-protector -fPIC -Wall
+OPT_CFLAGS = -O2 -flto -funroll-loops -fno-omit-frame-pointer -fstack-protector-all -fPIC -Wall
 
 BASE_CFLAGS = -D__USE_GNU -std=gnu11 -DVERSION=\"$(VERSION)\"
 
@@ -53,8 +53,7 @@ endif
 ifeq ($(DEBUG),1)
 BUILD_TYPE = debug
 BUILD_TYPE_CFLAGS = -g -DDEBUG
-#-fsanitize=undefined -fsanitize=address
-#-fsanitize=thread
+#-fsanitize=undefined -fsanitize=address -fsanitize=thread
 else
 BUILD_TYPE = release
 BUILD_TYPE_CFLAGS = -DNDEBUG
@@ -67,9 +66,9 @@ OBJDIR=$(BUILD_TYPE).$(OS).$(ARCH)
 
 CFLAGS = $(BUILD_TYPE_CFLAGS) $(BASE_CFLAGS) $(OPT_CFLAGS) $(ARCH_CFLAGS)
 
-INCLUDE=-I. -I$(SRCDIR) -I./cjson/
+INCLUDE=-I. -I$(SRCDIR) -I./cjson/ -I./inih/
 
-LDFLAGS=-L. -lpthread -lcurl -lcjson -L./cjson/ -ldl -lsqlite3
+LDFLAGS=-L. -lpthread -lcurl -lcjson -L./cjson/ -ldl -lgc
 
 DO_CC=$(CC) $(CFLAGS) $(INCLUDE) -o $@ -c $<
 

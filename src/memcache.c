@@ -1,12 +1,5 @@
+#include "common.h"
 #include "memcache.h"
-#include <stdlib.h>
-#include <assert.h>
-
-#include <string.h>
-#include <stdio.h>
-
-#include <stdint.h>
-
 #include "crc_hash.h"
 
 typedef struct memcache_s
@@ -34,7 +27,7 @@ memcache_t *memcache_find(const char *key)
 
   memcache_t *ptr = pool->list;
 
-  uint32_t hash = crc32_calc((const unsigned char *)key, strlen(key));
+  uint32_t hash = memcrc32((const unsigned char *)key, strlen(key));
 
   while (ptr) {
 
@@ -105,7 +98,7 @@ memcache_t *memcache_realloc(memcache_t *ptr, const char *data, size_t data_len)
   ptr->data = realloc(ptr->data, data_len + 1);
   if(!ptr->data)
     {
-      printf("realloc failed\n");
+      Con_Printf("realloc failed\n");
       exit(EXIT_FAILURE);
     }
   ptr->data_len = data_len;
@@ -130,7 +123,7 @@ void memcache_push(const char *key, const char *value)
       memcache_realloc(ptr, value, strlen(value));
 	return;
     } else {
-      unsigned int hash = crc32_calc((const unsigned char *)key, strlen(key));
+      unsigned int hash = memcrc32((const unsigned char *)key, strlen(key));
       ptr = memcache_alloc(hash, value, strlen(value));
       ptr->next = pool->list;
       pool->list = ptr;

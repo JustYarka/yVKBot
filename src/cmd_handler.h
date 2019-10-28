@@ -1,9 +1,9 @@
 #pragma once
 
 #include "vkapi.h"
-#include "users.h"
+#include "users_api.h"
 
-typedef  void	(*cmd_function_callback)(vkapi_handle *object, vkapi_message_object *message, int argc, char *argv[], const char *args);
+typedef  void	(*cmd_function_callback)(vkapi_message_object *message, int argc, char *argv[], const char *args);
 
 typedef struct
 {
@@ -29,9 +29,19 @@ typedef struct
   unsigned int hash;
 } cmds_name_hashs_t;
 
+typedef struct
+{
+    char *name;
+    char *version;
+    char *date;
+    char *url;
+    char *author;
+    int ifver; // interface version
+} module_info_t;
+
 typedef struct cmds_modules_pools_s
 {
-  int module_id;
+  module_info_t *info;
   const char	*string;
   const char    *description;
   cmd_function_callback  function;
@@ -40,7 +50,7 @@ typedef struct cmds_modules_pools_s
 } cmds_modules_pools_t;
 
 #ifndef _VKBOT_MODULE
-vkapi_boolean cmd_handle(vkapi_handle *object, vkapi_message_object *message);
+bool cmd_handle(vkapi_message_object *message);
 void cmd_handler_deinit(void);
 void cmd_handler_init(void);
 #endif

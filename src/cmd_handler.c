@@ -1,15 +1,5 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <strings.h>
-#include <memory.h>
-#include <pthread.h>
-
-#include "cmd_handler.h"
-#include "cmds.h"
-#include "crc_hash.h"
-#include "vkapi.h"
-#include "va_utils.h"
+#include "common.h"
+#include "engine_cmds.h"
 
 #define MAX(a,b) ((a) > (b) ? (a) : (b))
 #define MIN(a,b) ((a) < (b) ? (a) : (b))
@@ -17,33 +7,15 @@
 #define ARRAY_LENGHT(x) (sizeof(x)/sizeof(x[0])) - 1
 
 cmds_modules_pools_t *modules_cmds_poll = NULL;
-
-cmds_hashs_t *cached_cmds = NULL;
-
-cmds_name_hashs_t *cached_names = NULL;
+static cmds_hashs_t *cached_cmds = NULL;
+static cmds_name_hashs_t *cached_names = NULL;
 
 const cmds_t commands[] = {
   { "помощь", "команда для показа этого сообщения", cmd_help },
+  { "модули", "список загруженных модулей", cmd_modules },
   { "оботе", "о боте", cmd_about_bot },
-  { "ping", "команда для проверки бота на отзывчевость", cmd_ping },
-  { "b64e", "кодирует строку в формате base64", cmd_base64_encode },
-  { "b64d", "декодирует строку в формате base64", cmd_base64_decode },
   { "стат", "показывает разную статистику бота", cmd_stat },
-  { "ранд", "рандомное число", cmd_rand },
-  { "когда", "узнать дату события", cmd_rand_date },
-//  { "кто", "выберает рандомного человека из беседы (нужны права администратора)", cmd_who },
-  { "инфа", "узнать вероятность чего-либо", cmd_info },
-  { "оцени", "оценивает что-либо", cmd_rate },
-  { "доки", "ищет документы в вк", cmd_rand_docs },
-  { "курс", "курс валют", cmd_valute_curse },
-  { "флип", "подбросить монетку", cmd_flip },
-  { "погода", "показывает погоду сейчас", cmd_weather },
-  { "crc32", "подсчитывает crc32 хеш строки или файла", cmd_crc32 },
-  { "хлмемы", "годный плейлист ютуба с мемами хл", cmd_hlmemes },
-  { "котик", "рандомный котик", cmd_cat },
-#ifdef DEBUG
-  { "debug", "бот собран с отладочными функциями", cmd_debug },
-#endif
+  { "gc", "статистика gc", cmd_gc },
   { NULL, NULL, NULL }
 };
 
@@ -64,7 +36,7 @@ static size_t static_commands = ARRAY_LENGHT( commands );
 static size_t max_command_len = 0;
 static size_t max_name_len = 0;
 
-vkapi_boolean cmd_is_bot_name(const char *name)
+bool cmd_is_bot_name(const char *name)
 {
   if(!name)
     return false;
@@ -74,7 +46,7 @@ vkapi_boolean cmd_is_bot_name(const char *name)
   if( name_len > max_name_len )
     return false;
 
-  unsigned int name_hash = crc32_calc( (const unsigned char *)name, name_len );
+  unsigned int name_hash = strncrc32case(name, name_len );
 
   for( size_t i = 0; i < static_names; i++ ) {
       if( cached_names[i].hash == name_hash )
@@ -96,19 +68,18 @@ cmd_function_callback cmd_get_command(const char *command)
   if( command_len > max_command_len )
     return NULL;
 
-  unsigned int cmd_hash = crc32_calc( (const unsigned char *)command, command_len );
+  unsigned int cmd_hash = strncrc32case(command, command_len );
 
   for( size_t i = 0; i < static_commands; i++ ) {
       if( cached_cmds[i].hash == cmd_hash )
 	{
 	  return cached_cmds[i].function;
-	}
     }
+  }
 
   cmds_modules_pools_t *ptr = modules_cmds_poll;
 
   while (ptr) {
-
       if(ptr->hash == cmd_hash)
 	{
 	  return ptr->function;
@@ -119,17 +90,17 @@ cmd_function_callback cmd_get_command(const char *command)
   return NULL;
 }
 
-int cmd_tokeinize_cmd(char *str, char *tokens[], int *tokens_len );
+int cmd_string_tokeinize(char *str, char *tokens[], int *tokens_len );
 
-vkapi_boolean cmd_handle(vkapi_handle *object, vkapi_message_object *message)
+bool cmd_handle(vkapi_message_object *message)
 {
-  char *argv[256] = { NULL };
-  vkapi_boolean without_name = false;
-
-  if( message->text->len == 0 || !message->text->ptr )
+    if( message->text->len == 0 || !message->text->ptr )
     {
-      return false;
+        return false;
     }
+
+  char *argv[256] = { NULL };
+  bool without_name = false;
 
   string_t s = string_dublicate( message->text );
 
@@ -137,9 +108,12 @@ vkapi_boolean cmd_handle(vkapi_handle *object, vkapi_message_object *message)
 
   char **tokens = (char**)calloc(256, sizeof(char*));
 
-  cmd_tokeinize_cmd( s->ptr, tokens, &tokens_count );
+  int error = cmd_string_tokeinize( s->ptr, tokens, &tokens_count );
 
   string_t args_s = string_init();
+
+  if(error == -1)
+      goto end;
 
    if( !cmd_is_bot_name(tokens[0]) )
     {
@@ -167,6 +141,7 @@ vkapi_boolean cmd_handle(vkapi_handle *object, vkapi_message_object *message)
        for(int i = 0; i < tokens_count; i++)
            argv[i] = tokens[i];
      } else {
+       tokens_count--;
        for(int i = 0; i < tokens_count; i++)
            argv[i] = tokens[i + 1];
      }
@@ -182,13 +157,13 @@ vkapi_boolean cmd_handle(vkapi_handle *object, vkapi_message_object *message)
 	   string_strncat( args_s, argv[c], strlen(argv[c]) );
 	 }
 
-   printf( "Try to call cmd %s\n", argv[0] );
+   Con_Printf( "Try to call cmd %s\n", argv[0] );
 
    cmd_function_callback cmd = cmd_get_command(argv[0]);
 
    if(cmd)
      {
-       cmd(object, message, tokens_count - 1, argv, args_s->ptr);
+       cmd(message, tokens_count - 1, argv, args_s->ptr);
 
        string_destroy( s );
        string_destroy( args_s );
@@ -198,7 +173,7 @@ vkapi_boolean cmd_handle(vkapi_handle *object, vkapi_message_object *message)
        goto not_found;
 
 no_args:
-    vkapi_send_message( object, message->peer_id, "Да-да?\n Для того чтобы узнать команды используйте помощь.", NULL, 0 );
+    vkapi_send_message( message->peer_id, "Да-да?\n Для того чтобы узнать команды используйте помощь.", NULL, 0 );
     string_destroy( s );
     string_destroy( args_s );
 
@@ -208,7 +183,7 @@ no_args:
     return false;
 
 not_found:
-    vkapi_send_message( object, message->peer_id, "Команда не найдена\n Для того чтобы узнать команды используйте помощь.", NULL, 0 );
+    vkapi_send_message( message->peer_id, "Команда не найдена\n Для того чтобы узнать команды используйте помощь.", NULL, 0 );
     string_destroy( s );
     string_destroy( args_s );
 
@@ -233,11 +208,11 @@ void cmd_calculate_cmd_hashes()
 
   if( cached_cmds == NULL )
     {
-      printf( "Error while allocated memory for commands hashs\n" );
+      Con_Printf( "Error while allocated memory for commands hashs\n" );
       exit( EXIT_FAILURE );
     }
 
-  printf( "Static commands in bot %lu ( static cmds_t commands[] )\n", static_commands );
+  Con_Printf( "Static commands in bot %lu ( static cmds_t commands[] )\n", static_commands );
 
   for( size_t i = 0; i < static_commands; i++ )
     {
@@ -246,12 +221,12 @@ void cmd_calculate_cmd_hashes()
 
       size_t string_len = strlen( commands[i].string );
 
-      cached_cmds[i].hash = crc32_calc( (const unsigned char *)commands[i].string, string_len );
+      cached_cmds[i].hash = strncrc32case( commands[i].string, string_len );
       cached_cmds[i].function = commands[i].function;
 
       max_command_len = MAX( max_command_len, string_len );
 
-      printf( "\"%s\" \"%s\" hash: %X len: %lu\n", commands[i].string, commands[i].description, cached_cmds[i].hash, string_len );
+      Con_Printf( "\"%s\" \"%s\" hash: %X len: %lu\n", commands[i].string, commands[i].description, cached_cmds[i].hash, string_len );
 
     }
 }
@@ -262,11 +237,11 @@ void cmd_calculate_name_hashes()
 
   if( cached_names == NULL )
     {
-      printf( "Error while allocated memory for commands hashs\n" );
+      Con_Printf( "Error while allocated memory for commands hashs\n" );
       exit( EXIT_FAILURE );
     }
 
-  printf( "Static names in bot %lu ( static cmds_names_t names[] )\n", static_names );
+  Con_Printf( "Static names in bot %lu ( static cmds_names_t names[] )\n", static_names );
 
   for( size_t i = 0; i < static_names; i++ )
     {
@@ -275,15 +250,15 @@ void cmd_calculate_name_hashes()
 
       size_t string_len = strlen( names[i].name );
 
-      cached_names[i].hash = crc32_calc( (const unsigned char *)names[i].name, string_len );
+      cached_names[i].hash = strncrc32case(names[i].name, string_len );
 
       max_name_len = MAX( max_name_len, string_len );
 
-      printf( "\"%s\" hash: %X\n", names[i].name, cached_names[i].hash );
+      Con_Printf( "\"%s\" hash: %X\n", names[i].name, cached_names[i].hash );
     }
 }
 
-void cmd_handler_register_module_cmd(int module_id, const char *cmd_name, const char *description, cmd_function_callback callback)
+void cmd_handler_register_module_cmd(module_info_t *info, const char *cmd_name, const char *description, cmd_function_callback callback)
 {
   cmds_modules_pools_t *ptr = NULL;
 
@@ -297,26 +272,25 @@ void cmd_handler_register_module_cmd(int module_id, const char *cmd_name, const 
       return;
     }
 
-  ptr->hash = crc32_calc((const unsigned char*)cmd_name, strlen(cmd_name));
+  ptr->hash = strncrc32case(cmd_name, strlen(cmd_name));
 
   ptr->string = cmd_name;
   ptr->description = description;
-  ptr->module_id = module_id;
+  ptr->info = info;
   ptr->function = callback;
 
   ptr->next = modules_cmds_poll;
   modules_cmds_poll = ptr;
 
-  printf("Cmd from module: \"%s\" - \"%s\" hash: %X \n", cmd_name, description, ptr->hash);
+  Con_Printf("Cmd from module %s: \"%s\" - \"%s\" hash: %X \n", info->name, cmd_name, description, ptr->hash);
 
   max_command_len = MAX(max_command_len, strlen(cmd_name));
-
 }
 
-void cmd_handler_unregister_module_cmd(int module_id)
+void cmd_handler_unregister_module_cmd(module_info_t *info)
 {
     cmds_modules_pools_t *ptr = modules_cmds_poll, *ptr_t1 = NULL;
-    if(ptr->module_id == module_id)
+    if(ptr->info == info)
       {
 	modules_cmds_poll = ptr->next;
 	return;
@@ -327,7 +301,7 @@ void cmd_handler_unregister_module_cmd(int module_id)
     while(ptr_t1)
       {
 
-	if( ptr_t1->module_id == module_id )
+    if( ptr_t1->info == info )
 	  {
 	    ptr->next = ptr_t1->next;
 	    return;

@@ -1,8 +1,5 @@
+#include "common.h"
 #include "curl/curl.h"
-
-#include "vkapi.h"
-
-#include "dynamic_strings.h"
 
 size_t curl_dynamic_string_writefunc( void *ptr, size_t size, size_t nmemb, void *data )
 {
@@ -35,8 +32,11 @@ size_t curl_dynamic_string_writefunc_binary( void *ptr, size_t size, size_t nmem
   return size*nmemb;
 }
 
-vkapi_boolean curl_get( void *curl_handle, string_t url, string_t useragent, string_t dataptr )
+bool curl_get( void *curl_handle, string_t url, string_t useragent, string_t dataptr )
 {
+    if(!curl_handle)
+        curl_handle = worker_get_vkapi_handle()->curl_handle;
+
   curl_easy_reset(curl_handle);
   curl_easy_setopt(curl_handle, CURLOPT_URL, url->ptr);
   curl_easy_setopt(curl_handle, CURLOPT_FOLLOWLOCATION, 1L);
@@ -54,15 +54,18 @@ vkapi_boolean curl_get( void *curl_handle, string_t url, string_t useragent, str
 
   if(error_code != CURLE_OK)
     {
-      printf("libcurl error: %s\n", curl_easy_strerror(error_code));
+      Con_Printf("libcurl error: %s\n", curl_easy_strerror(error_code));
       return false;
     }
 
   return true;
 }
 
-vkapi_boolean curl_post( void *curl_handle, const char *url, string_t post, string_t useragent, string_t dataptr )
+bool curl_post( void *curl_handle, const char *url, string_t post, string_t useragent, string_t dataptr )
 {
+    if(!curl_handle)
+        curl_handle = worker_get_vkapi_handle()->curl_handle;
+
   curl_easy_reset(curl_handle);
   curl_easy_setopt(curl_handle, CURLOPT_URL, url);
   curl_easy_setopt(curl_handle, CURLOPT_POST, 1L);
@@ -84,14 +87,14 @@ vkapi_boolean curl_post( void *curl_handle, const char *url, string_t post, stri
 
   if(error_code != CURLE_OK)
     {
-      printf("libcurl error: %s\n", curl_easy_strerror(error_code));
+      Con_Printf("libcurl error: %s\n", curl_easy_strerror(error_code));
       return false;
     }
 
   return true;
 }
 
-vkapi_boolean curl_uploadfile( void *curl_handle, const char *url, const char *fieldname, const char *filename, string_t data, string_t useragent, string_t dataptr )
+bool curl_uploadfile( void *curl_handle, const char *url, const char *fieldname, const char *filename, string_t data, string_t useragent, string_t dataptr )
 {
   curl_mime *form = NULL;
   curl_mimepart *field = NULL;
@@ -118,7 +121,7 @@ vkapi_boolean curl_uploadfile( void *curl_handle, const char *url, const char *f
   if(error_code != CURLE_OK)
     {
       curl_mime_free(form);
-      printf("libcurl error: %s\n", curl_easy_strerror(error_code));
+      Con_Printf("libcurl error: %s\n", curl_easy_strerror(error_code));
       return false;
     }
 
@@ -130,6 +133,17 @@ vkapi_boolean curl_uploadfile( void *curl_handle, const char *url, const char *f
 void *curl_init()
 {
   return curl_easy_init();
+}
+
+char *curl_urlencode(const char *data)
+{
+    void *curl_handle = worker_get_vkapi_handle()->curl_handle;
+    return curl_easy_escape(curl_handle, data, 0);
+}
+
+void curl_ptr_free(void *ptr)
+{
+    curl_free(ptr);
 }
 
 void curl_cleanup(void *ptr)
